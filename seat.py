@@ -1,63 +1,75 @@
 import random
 import string
 
-# Define row labels corresponding to the aircraft layout
+# Define row labels representing the aircraft layout
 row_labels = ["A", "B", "C", "X", "D", "E", "F"]
 
 # Generate full seating layout for the aircraft
-# Each row has 80 seats. Rows D, E, F contain storage seats at positions 77 and 78.
+# Rows A–C and D–F are passenger rows
+# Row X is the aisle (non-bookable)
+# Columns 77 and 78 (index 76, 77) in rows D–F are storage areas
 def create_aircraft_layout():
     layout = [
         ['F'] * 80,  # Row A
         ['F'] * 80,  # Row B
         ['F'] * 80,  # Row C
-        ['X'] * 80,  # Aisle Row (non-bookable)
+        ['X'] * 80,  # Aisle row (not bookable)
     ]
-    for _ in range(3):  # Create Rows D, E, F (same structure)
-        row = ['F'] * 80  # Start with all seats free
-        row[76] = 'S'     # Storage at column 77
-        row[77] = 'S'     # Storage at column 78
+    for _ in range(3):  # Create rows D, E, F with storage seats
+        row = ['F'] * 80
+        row[76] = 'S'  # Storage seat at position 77
+        row[77] = 'S'  # Storage seat at position 78
         layout.append(row)
     return layout
 
-# Initialize the seating layout
+# Initialize seating layout and storage
 seats = create_aircraft_layout()
+used_references = set()  # Tracks used booking references
+passenger_db = {}        # Simulated database for passenger records
 
-# Track used booking references to ensure uniqueness
-used_references = set()
-# Simulate a database of bookings using a dictionary
-passenger_db = {}
+WINDOW_SEATS = [0, 79]   # Window seat columns (1 and 80)
+AISLE_SEATS = [3, 76]    # Aisle-adjacent seat columns (4 and 77)
 
-WINDOW_SEATS = [0, 79]  # Window seats at the ends of the row
-AISLE_SEATS = [3, 76]   # Seats near the aisle for preference logic
-
-# Generate a unique 8-character booking reference
+# Generate a unique 8-character alphanumeric booking reference
 def generate_booking_reference():
-    """
-    Generates an 8-character alphanumeric booking reference.
-    Ensures the reference is unique by checking against used_references.
-    """
     while True:
         ref = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         if ref not in used_references:
             used_references.add(ref)
             return ref
 
-# Display a condensed version of the seating layout
-def show_seats():
+# Display a simplified view of the seating layout
+def show_seats(agent=False):
     print("\nSeating Layout (showing first and last 6 seats per row):")
     for i, row in enumerate(seats):
-        # Show only the beginning and end of each row to keep output clean
-        display = row[:6] + ['...'] + row[-6:]
+        display = []
+
+        # Show first 6 seats of the row
+        for seat in row[:6]:
+            if agent:
+                display.append(seat)  # Staff sees actual seat values
+            else:
+                display.append("F" if seat == "F" else "R")  # Customer sees only F or R
+
+        display.append("...")  # Indicate skipped middle seats
+
+        # Show last 6 seats of the row
+        for seat in row[-6:]:
+            if agent:
+                display.append(seat)
+            else:
+                display.append("F" if seat == "F" else "R")
+
+        # Print row label (A–F or X) and seat view
         print(f"Row {row_labels[i]}: {' '.join(display)}")
 
-# Check if a specific seat is available using seat input like '12A'
+# Check if a specific seat is available based on input like '12A'
 def check_availability():
     try:
         seat_input = input("Enter seat (e.g., 12A): ").strip().upper()
-        col = int(seat_input[:-1]) - 1  # Extract column (seat number)
-        row_letter = seat_input[-1]     # Extract row letter (A–F)
-        row = row_labels.index(row_letter)  # Convert letter to index
+        col = int(seat_input[:-1]) - 1  # Extract seat number
+        row_letter = seat_input[-1]     # Extract row letter
+        row = row_labels.index(row_letter)
     except (ValueError, IndexError):
         print("Invalid input. Use format like 12A.")
         return
@@ -73,25 +85,35 @@ def check_availability():
     else:
         print("Seat does not exist.")
 
-# Recommend a seat based on passenger preference (window/aisle/none)
+# Recommend a seat based on user preference (window/aisle/none)
 def recommend_seat(preference):
     for row_idx, row in enumerate(seats):
-        for col_idx, seat in enumerate(row):
-            if seat == "F":
-                if preference == "window" and col_idx in WINDOW_SEATS:
-                    return row_idx, col_idx
-                elif preference == "aisle" and col_idx in AISLE_SEATS:
-                    return row_idx, col_idx
-                elif preference == "none":
-                    return row_idx, col_idx
-    return None
+        row_label = row_labels[row_idx]
 
-# Book a seat and collect passenger details
+        if row_label == 'X':
+            continue  # Skip aisle row
+
+        for col_idx in range(len(row)):
+            seat = seats[row_idx][col_idx]
+
+            if seat != "F":
+                continue  # Skip non-free seats
+
+            if row_label in ["D", "E", "F"] and col_idx in [76, 77]:
+                continue  # Skip storage seats
+
+            # Return seat matching user's preference
+            if preference == "window" and col_idx in WINDOW_SEATS:
+                return row_idx, col_idx
+            elif preference == "aisle" and col_idx in AISLE_SEATS:
+                return row_idx, col_idx
+            elif preference == "none":
+                return row_idx, col_idx
+
+    return None  # No seat found
+
+# Book a seat based on preference and collect passenger details
 def book_seat():
-    """
-    Recommends a seat based on preference and confirms booking.
-    Collects passenger details and stores them with the generated reference.
-    """
     preference = input("Enter seat preference (Window/Aisle/None): ").lower()
     recommended = recommend_seat(preference)
     if recommended:
@@ -104,7 +126,7 @@ def book_seat():
             last_name = input("Enter Last Name: ")
             passport = input("Enter Passport Number: ")
 
-            # Store passenger details
+            # Store passenger details in the database
             passenger_db[booking_ref] = {
                 "First Name": first_name,
                 "Last Name": last_name,
@@ -113,7 +135,7 @@ def book_seat():
                 "Seat Column": col + 1
             }
 
-            # Update the seat layout with the booking reference
+            # Mark the seat with the booking reference
             seats[row][col] = booking_ref
             print(f"Seat booked! Your booking reference is: {booking_ref}")
         else:
@@ -128,8 +150,8 @@ def free_seat():
     for row_idx, row in enumerate(seats):
         for col_idx, value in enumerate(row):
             if value == booking_ref:
-                seats[row_idx][col_idx] = "F"  # Reset seat to Free
-                passenger_db.pop(booking_ref, None)  # Remove passenger record
+                seats[row_idx][col_idx] = "F"  # Mark as free
+                passenger_db.pop(booking_ref, None)  # Remove from database
                 print(f"Seat with booking reference {booking_ref} has been freed.")
                 found = True
                 break
@@ -138,7 +160,7 @@ def free_seat():
     if not found:
         print("Booking reference not found.")
 
-# Display all passenger bookings with their details
+# Show all current bookings (Staff Only)
 def show_all_bookings():
     if not passenger_db:
         print("No bookings have been made.")
@@ -148,17 +170,28 @@ def show_all_bookings():
             for key, value in info.items():
                 print(f"  {key}: {value}")
 
-# Main user interaction menu
+# Main menu interaction based on user role
 def main():
+    print("Welcome to Apache Airlines Seat Booking System")
+    role = input("Are you a Customer or Staff? ").strip().lower()
+
+    if role not in ["customer", "staff"]:
+        print("Invalid role. Please restart the program.")
+        return
+
     while True:
         print("\nMenu:")
         print("1. Check availability")
         print("2. Book seat with preference")
         print("3. Free seat")
         print("4. Show seating status")
-        print("5. Show all bookings")
-        print("6. Exit")
-        choice = input("Choose option (1-6): ")
+        if role == "staff":
+            print("5. Show all bookings")
+            print("6. Exit")
+        else:
+            print("5. Exit")
+
+        choice = input("Choose option: ")
 
         if choice == '1':
             check_availability()
@@ -167,10 +200,14 @@ def main():
         elif choice == '3':
             free_seat()
         elif choice == '4':
-            show_seats()
+            show_seats(agent=(role == "staff"))
         elif choice == '5':
-            show_all_bookings()
-        elif choice == '6':
+            if role == "staff":
+                show_all_bookings()
+            else:
+                print("Exiting program. Goodbye!")
+                break
+        elif choice == '6' and role == "staff":
             print("Exiting program. Goodbye!")
             break
         else:
